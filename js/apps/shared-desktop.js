@@ -201,7 +201,17 @@ function sdApplyMouseEvent(snap){
     if(event.type === 'click'){
       sdSimulateClick(x, y, data.button || 0);
     } else if(event.type === 'scroll'){
-      sdSimulateScroll(x, y, data.deltaX || 0, data.deltaY || 0);
+      // For scroll, we need to find the scrollable element
+      var scrollElement = document.elementFromPoint(x, y);
+      if(scrollElement){
+        // Try to scroll the element directly
+        if(scrollElement.scrollTop !== undefined || scrollElement.scrollLeft !== undefined){
+          scrollElement.scrollTop -= data.deltaY || 0;
+          scrollElement.scrollLeft -= data.deltaX || 0;
+        }
+        // Also dispatch the wheel event for compatibility
+        sdSimulateScroll(x, y, data.deltaX || 0, data.deltaY || 0);
+      }
     } else if(event.type === 'dblclick'){
       sdSimulateClick(x, y, 0, true);
     }
@@ -228,6 +238,31 @@ function sdSimulateScroll(x, y, deltaX, deltaY){
   var element = document.elementFromPoint(x, y);
   if(!element) return;
   
+  // First try to find a scrollable parent
+  var scrollableElement = element;
+  while(scrollableElement && scrollableElement !== document.body){
+    var overflowY = window.getComputedStyle(scrollableElement).overflowY;
+    var overflowX = window.getComputedStyle(scrollableElement).overflowX;
+    if((overflowY === 'auto' || overflowY === 'scroll') || (overflowX === 'auto' || overflowX === 'scroll')){
+      break;
+    }
+    scrollableElement = scrollableElement.parentElement;
+  }
+  
+  // If no scrollable parent found, use the original element
+  if(!scrollableElement || scrollableElement === document.body){
+    scrollableElement = element;
+  }
+  
+  // Direct scrolling for better control
+  if(scrollableElement.scrollTop !== undefined){
+    scrollableElement.scrollTop -= deltaY;
+  }
+  if(scrollableElement.scrollLeft !== undefined){
+    scrollableElement.scrollLeft -= deltaX;
+  }
+  
+  // Also dispatch wheel event for compatibility
   var scrollEvent = new WheelEvent('wheel', {
     bubbles: true,
     cancelable: true,
