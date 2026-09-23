@@ -9,6 +9,7 @@ var SD_BEAT_MS     = 10000;   // keep-alive write while idle
 var SD_STALE_MS    = 30000;   // drop peers that stopped reporting
 var SD_ACTION_TTL  = 15000;   // how long a broadcast window action lingers
 var SD_CODE_CHARS  = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+var SD_MOUSE_TTL   = 5000;    // how long mouse events linger
 
 var sdState = {
   code: null,
@@ -23,7 +24,9 @@ var sdState = {
   lastY: -1,
   frameHooks: [],
   actionsRef: null,
-  applying: false
+  applying: false,
+  mouseEventsRef: null,
+  remoteMouseEnabled: true
 };
 
 try {
@@ -167,6 +170,77 @@ function sdSend(x, y){
   sdState.myRef.set({ name: sdState.name, x: x, y: y, t: now });
 }
 
+/* ---------- Mouse event broadcasting ---------- */
+
+function sdBroadcastMouseEvent(type, data){
+  if(!sdState.mouseEventsRef || sdState.applying) return;
+  var ref = sdState.mouseEventsRef.push();
+  var eventData = {
+    by: sdClientId(),
+    name: sdState.name,
+    type: type,
+    data: data,
+    t: Date.now()
+  };
+  ref.set(eventData);
+  ref.onDisconnect().remove();
+  setTimeout(function(){ ref.remove(); }, SD_MOUSE_TTL);
+}
+
+function sdApplyMouseEvent(snap){
+  var event = snap.val() || {};
+  if(event.by === sdClientId()) return;
+  if(!sdState.remoteMouseEnabled) return;
+  
+  sdState.applying = true;
+  try {
+    var data = event.data || {};
+    var x = data.x !== undefined ? data.x * window.innerWidth : window.innerWidth / 2;
+    var y = data.y !== undefined ? data.y * window.innerHeight : window.innerHeight / 2;
+    
+    if(event.type === 'click'){
+      sdSimulateClick(x, y, data.button || 0);
+    } else if(event.type === 'scroll'){
+      sdSimulateScroll(x, y, data.deltaX || 0, data.deltaY || 0);
+    } else if(event.type === 'dblclick'){
+      sdSimulateClick(x, y, 0, true);
+    }
+  } catch(e){}
+  sdState.applying = false;
+}
+
+function sdSimulateClick(x, y, button, isDoubleClick){
+  var element = document.elementFromPoint(x, y);
+  if(!element) return;
+  
+  var clickEvent = new MouseEvent(isDoubleClick ? 'dblclick' : 'click', {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: button
+  });
+  
+  element.dispatchEvent(clickEvent);
+}
+
+function sdSimulateScroll(x, y, deltaX, deltaY){
+  var element = document.elementFromPoint(x, y);
+  if(!element) return;
+  
+  var scrollEvent = new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    deltaX: deltaX,
+    deltaY: deltaY,
+    deltaMode: 0
+  });
+  
+  element.dispatchEvent(scrollEvent);
+}
+
 /* Idle users must keep reporting or the stale sweep drops them. */
 setInterval(function(){
   if(!sdState.myRef) return;
@@ -180,7 +254,37 @@ function sdTrackMove(e){
   sdSend(e.clientX / window.innerWidth, e.clientY / window.innerHeight);
 }
 
+function sdTrackClick(e){
+  if(!sdState.code) return;
+  sdBroadcastMouseEvent('click', {
+    x: e.clientX / window.innerWidth,
+    y: e.clientY / window.innerHeight,
+    button: e.button
+  });
+}
+
+function sdTrackScroll(e){
+  if(!sdState.code) return;
+  sdBroadcastMouseEvent('scroll', {
+    x: e.clientX / window.innerWidth,
+    y: e.clientY / window.innerHeight,
+    deltaX: e.deltaX,
+    deltaY: e.deltaY
+  });
+}
+
+function sdTrackDblClick(e){
+  if(!sdState.code) return;
+  sdBroadcastMouseEvent('dblclick', {
+    x: e.clientX / window.innerWidth,
+    y: e.clientY / window.innerHeight
+  });
+}
+
 document.addEventListener('mousemove', sdTrackMove);
+document.addEventListener('click', sdTrackClick);
+document.addEventListener('wheel', sdTrackScroll);
+document.addEventListener('dblclick', sdTrackDblClick);
 
 /* Same-origin app windows (srcdoc iframes) swallow the parent's mousemove,
    so mirror their movement into desktop coordinates. */
@@ -195,14 +299,40 @@ function sdHookFrames(){
     if(!doc) continue;
     frame.dataset.sdHooked = '1';
     (function(f, d){
-      var handler = function(ev){
+      var moveHandler = function(ev){
         if(!sdState.code) return;
         var rect = f.getBoundingClientRect();
         sdSend((rect.left + ev.clientX) / window.innerWidth,
                (rect.top + ev.clientY) / window.innerHeight);
       };
-      d.addEventListener('mousemove', handler);
-      sdState.frameHooks.push({ doc: d, handler: handler });
+      
+      var clickHandler = function(ev){
+        if(!sdState.code) return;
+        var rect = f.getBoundingClientRect();
+        sdBroadcastMouseEvent('click', {
+          x: (rect.left + ev.clientX) / window.innerWidth,
+          y: (rect.top + ev.clientY) / window.innerHeight,
+          button: ev.button
+        });
+      };
+      
+      var scrollHandler = function(ev){
+        if(!sdState.code) return;
+        var rect = f.getBoundingClientRect();
+        sdBroadcastMouseEvent('scroll', {
+          x: (rect.left + ev.clientX) / window.innerWidth,
+          y: (rect.top + ev.clientY) / window.innerHeight,
+          deltaX: ev.deltaX,
+          deltaY: ev.deltaY
+        });
+      };
+      
+      d.addEventListener('mousemove', moveHandler);
+      d.addEventListener('click', clickHandler);
+      d.addEventListener('wheel', scrollHandler);
+      sdState.frameHooks.push({ doc: d, handler: moveHandler });
+      sdState.frameHooks.push({ doc: d, handler: clickHandler });
+      sdState.frameHooks.push({ doc: d, handler: scrollHandler });
     })(frame, doc);
   }
 }
@@ -212,6 +342,8 @@ setInterval(sdHookFrames, 2000);
 function sdUnhookFrames(){
   sdState.frameHooks.forEach(function(h){
     try { h.doc.removeEventListener('mousemove', h.handler); } catch(e){}
+    try { h.doc.removeEventListener('click', h.handler); } catch(e){}
+    try { h.doc.removeEventListener('wheel', h.handler); } catch(e){}
   });
   sdState.frameHooks = [];
   var frames = document.querySelectorAll('iframe[id^="frame-"]');
@@ -322,6 +454,9 @@ function sdAttach(code){
   sdState.actionsRef = sdState.roomRef.child('actions');
   sdState.actionsRef.orderByChild('t').startAt(Date.now()).on('child_added', sdApplyAction);
 
+  sdState.mouseEventsRef = sdState.roomRef.child('mouseEvents');
+  sdState.mouseEventsRef.orderByChild('t').startAt(Date.now()).on('child_added', sdApplyMouseEvent);
+
   sdState.cursorsRef.on('child_added', sdPeerUpdate);
   sdState.cursorsRef.on('child_changed', sdPeerUpdate);
   sdState.cursorsRef.on('child_removed', function(snap){
@@ -396,6 +531,7 @@ window.sdJoinRoom = function(code, name){
 window.sdLeaveRoom = function(){
   if(sdState.cursorsRef) sdState.cursorsRef.off();
   if(sdState.actionsRef) sdState.actionsRef.off();
+  if(sdState.mouseEventsRef) sdState.mouseEventsRef.off();
   if(sdState.myRef){
     sdState.myRef.onDisconnect().cancel();
     sdState.myRef.remove();
@@ -406,6 +542,7 @@ window.sdLeaveRoom = function(){
   sdState.roomRef = null;
   sdState.cursorsRef = null;
   sdState.actionsRef = null;
+  sdState.mouseEventsRef = null;
   sdState.myRef = null;
   document.body.classList.remove('sd-active');
   sdPushState();
@@ -487,9 +624,10 @@ input[type=text]:focus{border-color:#777;}
     <div class="sd-live"><span class="sd-dot"></span> CONNECTED</div>
     <div class="sd-code" id="sd-room-code">------</div>
     <small>Share this code so others land on your desktop</small>
-    <div class="warning-text" style="color:#888;">Apps you open, close or minimize do the same on their desktop.</div>
+    <div class="warning-text" style="color:#888;">Apps you open, close or minimize do the same on their desktop. Clicks and scrolling are also shared.</div>
     <div class="sd-row">
       <button class="btn-go btn-ghost" onclick="sdCopy()"><i class="fas fa-copy"></i> Copy code</button>
+      <button class="btn-go btn-ghost" onclick="sdToggleRemoteMouse()"><i class="fas fa-mouse"></i> Remote Mouse: <span id="remote-mouse-status">ON</span></button>
       <button class="btn-go" onclick="window.parent.sdLeaveRoom()">Leave</button>
     </div>
   </div>
@@ -513,6 +651,11 @@ function sdCopy(){
   if(navigator.clipboard) navigator.clipboard.writeText(code);
 }
 
+function sdToggleRemoteMouse(){
+  P.sdState.remoteMouseEnabled = !P.sdState.remoteMouseEnabled;
+  document.getElementById('remote-mouse-status').textContent = P.sdState.remoteMouseEnabled ? 'ON' : 'OFF';
+}
+
 function sdRender(state){
   document.getElementById('sd-disconnected').style.display = state.connected ? 'none' : 'block';
   document.getElementById('sd-connected').style.display    = state.connected ? 'block' : 'none';
@@ -520,6 +663,7 @@ function sdRender(state){
   if(document.activeElement !== nameInput) nameInput.value = state.name || '';
   if(!state.connected) return;
   document.getElementById('sd-room-code').textContent = state.code;
+  document.getElementById('remote-mouse-status').textContent = P.sdState.remoteMouseEnabled ? 'ON' : 'OFF';
   document.getElementById('sd-people').innerHTML = state.members.map(function(m){
     return '<li><span class="sd-swatch" style="background:' + m.color + '"></span>' + m.name + '</li>';
   }).join('');
