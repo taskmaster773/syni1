@@ -234,6 +234,7 @@ window.addEventListener('resize', function(){
 /* ---------- Mirrored window actions ---------- */
 
 var sdWindow = {
+  toggle:   window.toggleApp,
   open:     window.openWindow,
   close:    window.closeWindow,
   minimize: window.minimizeWindow
@@ -258,6 +259,11 @@ function sdApplyAction(snap){
 }
 
 /* toggleApp() routes through these, so dock clicks are covered too. */
+window.toggleApp = function(id){
+  sdWindow.toggle(id);
+  sdBroadcast('toggle', id);
+};
+
 window.openWindow = function(id){
   sdWindow.open(id);
   sdBroadcast('open', id);
