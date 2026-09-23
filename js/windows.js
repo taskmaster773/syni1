@@ -37,6 +37,7 @@ window.openWindow = function(id){
 }
       else if(id === 'term')  f.srcdoc = getSpotifyHTML();
       else if(id === 'proxy') f.srcdoc = getProxyBrowserHTML();
+      else if(id === 'shared') f.srcdoc = getSharedDesktopHTML();
       else if(id === 'browser'){
         // Browser app — fetch the HTML file
         fetch('apps/browser.html')
