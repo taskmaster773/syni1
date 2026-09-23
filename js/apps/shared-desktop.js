@@ -5,6 +5,7 @@
 
 var SD_PATH        = 'shared-desktops';
 var SD_SEND_MS     = 60;      // cursor write throttle
+var SD_BEAT_MS     = 10000;   // keep-alive write while idle
 var SD_STALE_MS    = 30000;   // drop peers that stopped reporting
 var SD_CODE_CHARS  = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -162,6 +163,14 @@ function sdSend(x, y){
   sdState.lastY = y;
   sdState.myRef.set({ name: sdState.name, x: x, y: y, t: now });
 }
+
+/* Idle users must keep reporting or the stale sweep drops them. */
+setInterval(function(){
+  if(!sdState.myRef) return;
+  if(Date.now() - sdState.lastSent < SD_BEAT_MS) return;
+  sdState.lastSent = Date.now();
+  sdState.myRef.update({ name: sdState.name, t: sdState.lastSent });
+}, SD_BEAT_MS);
 
 function sdTrackMove(e){
   if(!sdState.code) return;
