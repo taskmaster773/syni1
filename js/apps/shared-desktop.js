@@ -234,10 +234,15 @@ window.addEventListener('resize', function(){
 /* ---------- Mirrored window actions ---------- */
 
 var sdWindow = {
-  toggle:   window.toggleApp,
   open:     window.openWindow,
   close:    window.closeWindow,
   minimize: window.minimizeWindow
+};
+
+var sdNoti = {
+  show:     window.showNotification,
+  toggle:   window.toggleNoti,
+  add:      window.addNoti
 };
 
 function sdBroadcast(type, app){
@@ -251,32 +256,55 @@ function sdBroadcast(type, app){
 function sdApplyAction(snap){
   var a = snap.val() || {};
   if(a.by === sdClientId()) return;
-  var run = sdWindow[a.type];
-  if(!run || !a.app) return;
+  
   sdState.applying = true;
-  try { run(a.app); } catch(e){}
+  try {
+    if(a.type === 'notification' && a.app && typeof a.app === 'object'){
+      if(a.app.type === 'show' && a.app.title !== undefined){
+        sdNoti.show(a.app.title, a.app.msg || '');
+      } else if(a.app.type === 'toggle'){
+        sdNoti.toggle();
+      } else if(a.app.type === 'add' && a.app.title !== undefined){
+        sdNoti.add(a.app.title, a.app.msg || '');
+      }
+    } else {
+      var run = sdWindow[a.type];
+      if(run && a.app) run(a.app);
+    }
+  } catch(e){}
   sdState.applying = false;
 }
 
-/* toggleApp() routes through these, so dock clicks are covered too. */
-window.toggleApp = function(id){
-  sdWindow.toggle(id);
-  sdBroadcast('toggle', id);
-};
-
+/* Window functions that get broadcast to other users */
 window.openWindow = function(id){
+  if(!sdState.applying) sdBroadcast('open', id);
   sdWindow.open(id);
-  sdBroadcast('open', id);
 };
 
 window.closeWindow = function(id){
+  if(!sdState.applying) sdBroadcast('close', id);
   sdWindow.close(id);
-  sdBroadcast('close', id);
 };
 
 window.minimizeWindow = function(id){
+  if(!sdState.applying) sdBroadcast('minimize', id);
   sdWindow.minimize(id);
-  sdBroadcast('minimize', id);
+};
+
+/* Notification functions that get broadcast to other users */
+window.showNotification = function(title, msg){
+  if(!sdState.applying) sdBroadcast('notification', { type: 'show', title: title, msg: msg });
+  sdNoti.show(title, msg);
+};
+
+window.toggleNoti = function(){
+  if(!sdState.applying) sdBroadcast('notification', { type: 'toggle' });
+  sdNoti.toggle();
+};
+
+window.addNoti = function(title, msg){
+  if(!sdState.applying) sdBroadcast('notification', { type: 'add', title: title, msg: msg });
+  sdNoti.add(title, msg);
 };
 
 /* ---------- Join / leave ---------- */
