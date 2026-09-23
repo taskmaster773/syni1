@@ -7,6 +7,7 @@ var SD_PATH        = 'shared-desktops';
 var SD_SEND_MS     = 60;      // cursor write throttle
 var SD_BEAT_MS     = 10000;   // keep-alive write while idle
 var SD_STALE_MS    = 30000;   // drop peers that stopped reporting
+var SD_ACTION_TTL  = 15000;   // how long a broadcast window action lingers
 var SD_CODE_CHARS  = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 var sdState = {
@@ -20,7 +21,9 @@ var sdState = {
   lastSent: 0,
   lastX: -1,
   lastY: -1,
-  frameHooks: []
+  frameHooks: [],
+  actionsRef: null,
+  applying: false
 };
 
 try {
@@ -228,6 +231,48 @@ window.addEventListener('resize', function(){
   for(var id in sdState.peers) sdDrawPeer(id);
 });
 
+/* ---------- Mirrored window actions ---------- */
+
+var sdWindow = {
+  open:     window.openWindow,
+  close:    window.closeWindow,
+  minimize: window.minimizeWindow
+};
+
+function sdBroadcast(type, app){
+  if(!sdState.actionsRef || sdState.applying) return;
+  var ref = sdState.actionsRef.push();
+  ref.set({ by: sdClientId(), name: sdState.name, type: type, app: app, t: Date.now() });
+  ref.onDisconnect().remove();
+  setTimeout(function(){ ref.remove(); }, SD_ACTION_TTL);
+}
+
+function sdApplyAction(snap){
+  var a = snap.val() || {};
+  if(a.by === sdClientId()) return;
+  var run = sdWindow[a.type];
+  if(!run || !a.app) return;
+  sdState.applying = true;
+  try { run(a.app); } catch(e){}
+  sdState.applying = false;
+}
+
+/* toggleApp() routes through these, so dock clicks are covered too. */
+window.openWindow = function(id){
+  sdWindow.open(id);
+  sdBroadcast('open', id);
+};
+
+window.closeWindow = function(id){
+  sdWindow.close(id);
+  sdBroadcast('close', id);
+};
+
+window.minimizeWindow = function(id){
+  sdWindow.minimize(id);
+  sdBroadcast('minimize', id);
+};
+
 /* ---------- Join / leave ---------- */
 
 function sdAttach(code){
@@ -239,6 +284,9 @@ function sdAttach(code){
 
   sdState.myRef.onDisconnect().remove();
   sdState.myRef.set({ name: sdState.name, x: 0.5, y: 0.5, t: Date.now() });
+
+  sdState.actionsRef = sdState.roomRef.child('actions');
+  sdState.actionsRef.orderByChild('t').startAt(Date.now()).on('child_added', sdApplyAction);
 
   sdState.cursorsRef.on('child_added', sdPeerUpdate);
   sdState.cursorsRef.on('child_changed', sdPeerUpdate);
@@ -313,6 +361,7 @@ window.sdJoinRoom = function(code, name){
 
 window.sdLeaveRoom = function(){
   if(sdState.cursorsRef) sdState.cursorsRef.off();
+  if(sdState.actionsRef) sdState.actionsRef.off();
   if(sdState.myRef){
     sdState.myRef.onDisconnect().cancel();
     sdState.myRef.remove();
@@ -322,6 +371,7 @@ window.sdLeaveRoom = function(){
   sdState.code = null;
   sdState.roomRef = null;
   sdState.cursorsRef = null;
+  sdState.actionsRef = null;
   sdState.myRef = null;
   document.body.classList.remove('sd-active');
   sdPushState();
@@ -403,6 +453,7 @@ input[type=text]:focus{border-color:#777;}
     <div class="sd-live"><span class="sd-dot"></span> CONNECTED</div>
     <div class="sd-code" id="sd-room-code">------</div>
     <small>Share this code so others land on your desktop</small>
+    <div class="warning-text" style="color:#888;">Apps you open, close or minimize do the same on their desktop.</div>
     <div class="sd-row">
       <button class="btn-go btn-ghost" onclick="sdCopy()"><i class="fas fa-copy"></i> Copy code</button>
       <button class="btn-go" onclick="window.parent.sdLeaveRoom()">Leave</button>
