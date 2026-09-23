@@ -30,7 +30,8 @@ var APPS = {
   'files':    { title:'App Store',      internal:true, icon:'https://cdn.jsdelivr.net/gh/taskmaster773/2wafawwfa@main/Screenshot%202026-08-06%20224937.png', pinned:true },
   'settings': { title:'CONFIG',         internal:true, icon:'https://cdn.iconscout.com/icon/free/png-256/free-apple-settings-icon-svg-download-png-493162.png', pinned:true },
   'proxy':    { title:'Proxy Browser',  internal:true, icon:'https://cdn-icons-png.flaticon.com/512/3064/3064197.png', pinned:true },
-  'browser':  { title:'Browser',        internal:true, icon:'https://cdn-icons-png.flaticon.com/512/1006/1006771.png', pinned:true }
+  'browser':  { title:'Browser',        internal:true, icon:'https://cdn-icons-png.flaticon.com/512/1006/1006771.png', pinned:true },
+  'shared':   { title:'Shared Desktop', internal:true, icon:'https://cdn-icons-png.flaticon.com/512/1256/1256650.png', pinned:true }
 };
 window.APPS = APPS;
 

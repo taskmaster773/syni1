@@ -1,0 +1,44 @@
+/* ============================================================
+   Shared Desktop — remote cursors
+   ============================================================ */
+
+#shared-cursor-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99999;
+  overflow: hidden;
+}
+
+.sd-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  will-change: transform;
+  transition: transform .08s linear;
+}
+
+.sd-cursor-arrow {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: var(--sd-color, #fff);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .8));
+}
+
+.sd-cursor-name {
+  margin-top: 14px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--sd-color, #fff);
+  color: #000;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .6);
+}
