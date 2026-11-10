@@ -77,8 +77,8 @@ window.closeWindow = function(id){
   var w = document.getElementById('win-' + id);
   var gameApps = ['files','roblox','fortnite','rocketl','xbox','geforce'];
   if(gameApps.includes(id)){
-    if(document.exitFullscreen) document.exitFullscreen();
-    if(document.exitPointerLock) document.exitPointerLock();
+    try { if(document.fullscreenElement && document.exitFullscreen){ var fp = document.exitFullscreen(); if(fp && fp.catch) fp.catch(function(){}); } } catch(e){}
+    try { if(document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch(e){}
     restoreGameUI();
   }
   if(w) w.remove();
