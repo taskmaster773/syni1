@@ -444,9 +444,22 @@
     </div>
     
     <script>
+/* SAFE STORAGE: localStorage throws in blocked/cloaked iframes (common on school Chromebooks).
+   An uncaught throw here killed the whole script, so the boot overlay never went away. */
+const safeStore = (function(){
+  try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return localStorage; }
+  catch(e){ var m = {}; return {
+    getItem: function(k){ return Object.prototype.hasOwnProperty.call(m,k) ? m[k] : null; },
+    setItem: function(k,v){ m[k] = String(v); },
+    removeItem: function(k){ delete m[k]; } }; }
+})();
+function readJSON(k){ try { return JSON.parse(safeStore.getItem(k)) || []; } catch(e){ return []; } }
+
 const API_ZONES = "https://cdn.jsdelivr.net/gh/bestsabplayerox/assets@main/zones.json";
 const COVER = "https://cdn.jsdelivr.net/gh/bestsabplayerox/covers@main/";
 const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/"; 
+const CDN_COVER = COVER;
+const CDN_HTML  = HTML;
 
         const NOAH_GAMES = [
   { title: "Alien Hominid", url: "https://cdn.jsdelivr.net/gh/NoahsAmazingTutoringHelp/Noahs-Calculus-Tutor@master/games/393.html", image: "https://cdn.jsdelivr.net/gh/NoahsAmazingTutoringHelp/Noahs-Calculus-Tutor/images/382.png" },
@@ -796,9 +809,9 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
         // Controller state tracking
         let navLayer = 'home_yours'; 
         
-        let purchasedIds = JSON.parse(localStorage.getItem('ps_purchased')) || [];
-        let homeIds = JSON.parse(localStorage.getItem('ps_home')) || [];
-        let customData = JSON.parse(localStorage.getItem('ps_custom')) || [];
+        let purchasedIds = readJSON('ps_purchased');
+        let homeIds = readJSON('ps_home');
+        let customData = readJSON('ps_custom');
         
         let rendered = 0;
         let useMouse = true; 
@@ -850,7 +863,7 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
             }, { passive: false });
 
             // Ported API logic combining both ZONES + NOAH_GAMES
-            fetch(API_ZONES + "?cachebust=" + Date.now())
+            Promise.race([fetch(API_ZONES + "?cachebust=" + Date.now()), new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("zones timeout")); }, 5000); })])
                 .then(r => r.json())
                 .then(data => {
                     const fetchedDB = data.map(g => ({
@@ -920,15 +933,16 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
         };
 
         function initBoot() {
+            if(window._booted) return; window._booted = true;
             setTimeout(() => {
                 document.getElementById('boot-screen').style.opacity = '0';
                 setTimeout(() => {
                     document.getElementById('boot-screen').style.visibility = 'hidden';
-                    if(!localStorage.getItem('navSet')) {
+                    if(!safeStore.getItem('navSet')) {
                         document.getElementById('nav-modal').style.display = 'flex';
                         hoverNav('keyboard'); 
                     } else {
-                        setNavMode(localStorage.getItem('navSet'));
+                        setNavMode(safeStore.getItem('navSet'));
                         startupDash();
                     }
                 }, 1200);
@@ -949,7 +963,7 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
 
         function setNavMode(mode) {
             useMouse = (mode === 'mouse');
-            localStorage.setItem('navSet', mode);
+            safeStore.setItem('navSet', mode);
             
             const icon = document.getElementById('input-toggle');
             if(useMouse) {
@@ -1398,7 +1412,7 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
                     homeIds.push(g.id);
                     popMsg("Added to Home Screen");
                 }
-                localStorage.setItem('ps_home', JSON.stringify(homeIds));
+                safeStore.setItem('ps_home', JSON.stringify(homeIds));
                 if(currentTab === 'games') activeIndex = Math.max(0, activeIndex - 1);
                 renderCards();
             }
@@ -1555,7 +1569,7 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
         function buyStuff(g) {
             if(purchasedIds.includes(g.id)) { popMsg("Already in Library", "error"); return; }
             purchasedIds.push(g.id);
-            localStorage.setItem('ps_purchased', JSON.stringify(purchasedIds));
+            safeStore.setItem('ps_purchased', JSON.stringify(purchasedIds));
             popMsg(`${g.name} added to Library!`);
             
             // Check main store
@@ -1629,7 +1643,7 @@ const HTML  = "https://cdn.jsdelivr.net/gh/bestsabplayerox/html@master/";
                         id: 'c_' + Date.now(), name: n, desc: "Sideloaded Title",
                         img: "", htmlContent: evt.target.result, price: 'Free', featured: false
                     });
-                    localStorage.setItem('ps_custom', JSON.stringify(customData));
+                    safeStore.setItem('ps_custom', JSON.stringify(customData));
                     popMsg("Title Installed!");
                     renderCards();
                     document.getElementById('file-input').value = ''; 
